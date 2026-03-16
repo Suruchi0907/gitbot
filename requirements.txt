@@ -1,0 +1,7 @@
+streamlit
+langchain-chroma
+langchain-huggingface
+langchain-google-genai
+google-generativeai
+python-dotenv
+sentence-transformers

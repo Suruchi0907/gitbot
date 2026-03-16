@@ -1,0 +1,4 @@
+gitlab_vectordb/
+.env
+__pycache__/
+*.pyc
