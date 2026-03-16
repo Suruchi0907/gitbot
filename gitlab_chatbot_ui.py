@@ -26,9 +26,6 @@ st.set_page_config(
     layout="centered"
 )
 
-# ─── BUILD DB IF FIRST DEPLOYMENT ──────────────────────────
-build_db_if_missing()
-
 # ─── LOAD ENV ──────────────────────────────────────────────
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")

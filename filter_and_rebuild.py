@@ -1,9 +1,3 @@
-"""
-Filter noise from gitlab_final_training.txt and rebuild vector DB.
-Removes sections dominated by tools like Salesforce, Workday, Glean etc.
-Keeps only GitLab culture, HR, engineering, and product content.
-"""
-
 import json
 import re
 import os

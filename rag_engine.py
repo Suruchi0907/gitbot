@@ -1,7 +1,3 @@
-"""
-rag_engine.py — Core retrieval and answer generation logic
-"""
-
 import os
 import json
 import streamlit as st
@@ -84,9 +80,6 @@ def get_answer(retriever, llm, question, history_str):
     """
     Retrieve relevant chunks and generate answer using Gemini.
     Returns (answer, sources, error_message, not_found_flag)
-
-    NOTE: History is passed ONLY to the LLM prompt, NOT to the retriever.
-    This prevents history from polluting vector search results.
     """
     try:
         # Step 1 — Retrieve using clean question only
@@ -148,11 +141,7 @@ Provide a thorough answer using the context above:"""
 
 
 def build_history_string(messages, max_history=6):
-    """
-    Build conversation history string from session messages.
-    Skips exchanges where the bot couldn't find an answer (not_found=True)
-    to prevent poisoning future queries.
-    """
+   
     recent   = messages[-(max_history * 2):]
     history  = ""
     skip_next = False
