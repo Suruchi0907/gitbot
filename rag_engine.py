@@ -14,43 +14,93 @@ TOP_K        = 8
 TEMPERATURE  = 0.2
 BATCH_SIZE   = 500
 # ────────────────────────────────────────────────────────────
-
 def build_db_if_missing():
-    """
-    Build vector DB from chunks JSON if DB doesn't exist.
-    Runs automatically on first deployment.
-    """
-    if os.path.exists(CHROMA_DIR):
-        return
+    import shutil
+    import os
 
-    if not os.path.exists(CHUNKS_FILE):
-        st.error(f"{CHUNKS_FILE} not found! Cannot build database.")
+    # Check if force rebuild is requested
+    force_rebuild = os.getenv("FORCE_REBUILD", "0") == "1"
+
+    if os.path.exists(CHROMA_DIR):
+        if not force_rebuild:
+            return  # DB exists and no force rebuild — skip
+        else:
+            print("Force rebuild requested — deleting old DB...")
+            shutil.rmtree(CHROMA_DIR)
+
+    # Build from training file if available (best quality)
+    if os.path.exists("gitlab_final_training.txt"):
+        st.info("⏳ Building vector database from training data... 15-20 minutes. Do not close this tab.")
+        import subprocess
+        result = subprocess.run(
+            ["python", "filter_and_rebuild.py"],
+            capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            st.error(f"Build failed: {result.stderr}")
+            st.stop()
+
+    # Fallback to chunks file
+    elif os.path.exists(CHUNKS_FILE):
+        st.info("⏳ Building vector database from chunks... 10-15 minutes. Do not close this tab.")
+        with open(CHUNKS_FILE, "r", encoding="utf-8") as f:
+            chunks = json.load(f)
+        texts     = [c["text"] for c in chunks]
+        metadatas = [{"chunk_id": c["chunk_id"], "source": c["source"]} for c in chunks]
+        embedding = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        vectordb  = None
+        for i in range(0, len(texts), BATCH_SIZE):
+            bt = texts[i:i+BATCH_SIZE]
+            bm = metadatas[i:i+BATCH_SIZE]
+            if vectordb is None:
+                vectordb = Chroma.from_texts(
+                    texts=bt, embedding=embedding,
+                    metadatas=bm, persist_directory=CHROMA_DIR
+                )
+            else:
+                vectordb.add_texts(texts=bt, metadatas=bm)
+    else:
+        st.error("No data files found! Need gitlab_final_training.txt or gitlab_chunks_v4.json")
         st.stop()
 
-    st.info("⏳ Building vector database for first time... This takes 10-15 minutes. Please wait and do not close the tab.")
-
-    with open(CHUNKS_FILE, "r", encoding="utf-8") as f:
-        chunks = json.load(f)
-
-    texts     = [c["text"] for c in chunks]
-    metadatas = [{"chunk_id": c["chunk_id"], "source": c["source"]} for c in chunks]
-
-    embedding = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    vectordb  = None
-
-    for i in range(0, len(texts), BATCH_SIZE):
-        bt = texts[i:i+BATCH_SIZE]
-        bm = metadatas[i:i+BATCH_SIZE]
-        if vectordb is None:
-            vectordb = Chroma.from_texts(
-                texts=bt, embedding=embedding,
-                metadatas=bm, persist_directory=CHROMA_DIR
-            )
-        else:
-            vectordb.add_texts(texts=bt, metadatas=bm)
-
-    st.success("✅ Database built successfully! Loading GitBot...")
+    st.success("✅ Database built successfully! Reloading...")
     st.rerun()
+# def build_db_if_missing():
+#     """
+#     Build vector DB from chunks JSON if DB doesn't exist.
+#     Runs automatically on first deployment.
+#     """
+#     if os.path.exists(CHROMA_DIR):
+#         return
+
+#     if not os.path.exists(CHUNKS_FILE):
+#         st.error(f"{CHUNKS_FILE} not found! Cannot build database.")
+#         st.stop()
+
+#     st.info("⏳ Building vector database for first time... This takes 10-15 minutes. Please wait and do not close the tab.")
+
+#     with open(CHUNKS_FILE, "r", encoding="utf-8") as f:
+#         chunks = json.load(f)
+
+#     texts     = [c["text"] for c in chunks]
+#     metadatas = [{"chunk_id": c["chunk_id"], "source": c["source"]} for c in chunks]
+
+#     embedding = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+#     vectordb  = None
+
+#     for i in range(0, len(texts), BATCH_SIZE):
+#         bt = texts[i:i+BATCH_SIZE]
+#         bm = metadatas[i:i+BATCH_SIZE]
+#         if vectordb is None:
+#             vectordb = Chroma.from_texts(
+#                 texts=bt, embedding=embedding,
+#                 metadatas=bm, persist_directory=CHROMA_DIR
+#             )
+#         else:
+#             vectordb.add_texts(texts=bt, metadatas=bm)
+
+#     st.success("✅ Database built successfully! Loading GitBot...")
+#     st.rerun()
 
 
 @st.cache_resource(show_spinner=False)
