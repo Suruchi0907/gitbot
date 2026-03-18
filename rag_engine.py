@@ -20,9 +20,8 @@ def build_db_if_missing():
     Build vector DB from chunks JSON if DB doesn't exist.
     Runs automatically on first deployment.
     """
-    import shutil
     if os.path.exists(CHROMA_DIR):
-        shutil.rmtree(CHROMA_DIR)
+        return
 
     if not os.path.exists(CHUNKS_FILE):
         st.error(f"{CHUNKS_FILE} not found! Cannot build database.")
