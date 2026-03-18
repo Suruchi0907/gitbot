@@ -1,27 +1,14 @@
-"""
-GitLab Chatbot - Smart Chunking Script
-=======================================
-This script chunks your gitlab_final_training.txt into
-well-sized overlapping chunks ideal for RAG pipelines.
-
-Usage:
-    python chunk_gitlab_data.py
-
-Output:
-    gitlab_chunks.json  — list of chunks with metadata
-"""
-
 import json
 import re
 import os
 
 # ─── CONFIG ──────────────────────────────────────────────
-INPUT_FILE  = "gitlab_final_training.txt"   # your merged training file
+INPUT_FILE  = "gitlab_final_training.txt"   
 OUTPUT_FILE = "gitlab_chunks.json"
 
-CHUNK_SIZE    = 800    # words per chunk (increase if answers are incomplete)
-CHUNK_OVERLAP = 150    # words of overlap between chunks (preserves context)
-MIN_CHUNK     = 50     # skip chunks smaller than this (noise)
+CHUNK_SIZE    = 800    
+CHUNK_OVERLAP = 150    
+MIN_CHUNK     = 50     
 # ─────────────────────────────────────────────────────────
 
 
@@ -40,14 +27,12 @@ def clean_text(text):
     text = re.sub(r'<%.*?%>', '', text, flags=re.DOTALL)     # ERB tags
     text = re.sub(r'[ \t]+', ' ', text)                      # collapse spaces
     text = re.sub(r'\n{3,}', '\n\n', text)                   # collapse blank lines
+    text = text.replace("GITBOT_SOURCE_DIRECTION", "")
     return text.strip()
 
 
 def split_into_chunks(text, chunk_size=800, overlap=150):
-    """
-    Splits text into overlapping word-based chunks.
-    Overlap ensures context is not lost at chunk boundaries.
-    """
+
     words = text.split()
     chunks = []
     start = 0
@@ -60,18 +45,19 @@ def split_into_chunks(text, chunk_size=800, overlap=150):
         if len(chunk_words) >= MIN_CHUNK:
             chunks.append(chunk_text)
 
-        # Move forward by (chunk_size - overlap) to create overlap
         start += chunk_size - overlap
 
     return chunks
 
 
 def detect_source(text):
-    """Try to detect if chunk is from handbook or direction."""
-    if "=== SOURCE:" in text:
+    if "GITBOT_SOURCE_DIRECTION" in text:
+        return "direction"
+    lower = text.lower()
+    hits = sum(1 for kw in DIRECTION_KEYWORDS if kw in lower)
+    if hits >= 2:
         return "direction"
     return "handbook"
-
 
 def main():
     if not os.path.exists(INPUT_FILE):
