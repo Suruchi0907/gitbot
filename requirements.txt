@@ -1,7 +1,11 @@
 streamlit
-langchain-chroma
-langchain-huggingface
-langchain-google-genai
+langchain==0.2.16
+langchain-core==0.2.38
+langchain-community==0.2.16
+langchain-chroma==0.1.4
+langchain-huggingface==0.0.3
+langchain-google-genai==1.0.10
 google-generativeai
-python-dotenv
 sentence-transformers
+chromadb
+python-dotenv
