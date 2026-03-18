@@ -36,7 +36,8 @@ GitBot is an interactive chatbot that allows GitLab employees and aspiring emplo
 
 ## 🌐 Live Demo
 
-> **[https://suruchi0907-gitbot.streamlit.app](https://suruchi0907-gitbot.streamlit.app)**
+> ## 🌐 Live Demo
+> **[https://gitbot-7kso5poy4nf2bmk7kfgtm9.streamlit.app](https://gitbot-7kso5poy4nf2bmk7kfgtm9.streamlit.app)**
 
 ---
 
