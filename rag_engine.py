@@ -16,54 +16,145 @@ BATCH_SIZE   = 500
 # ────────────────────────────────────────────────────────────
 def build_db_if_missing():
     import shutil
-    import os
+    import re
 
-    # Check if force rebuild is requested
     force_rebuild = os.getenv("FORCE_REBUILD", "0") == "1"
 
     if os.path.exists(CHROMA_DIR):
         if not force_rebuild:
-            return  # DB exists and no force rebuild — skip
-        else:
-            print("Force rebuild requested — deleting old DB...")
-            shutil.rmtree(CHROMA_DIR)
+            return
+        shutil.rmtree(CHROMA_DIR)
 
-    # Build from training file if available (best quality)
-    if os.path.exists("gitlab_final_training.txt"):
-        st.info("⏳ Building vector database from training data... 15-20 minutes. Do not close this tab.")
-        import subprocess
-        result = subprocess.run(
-            ["python", "filter_and_rebuild.py"],
-            capture_output=True, text=True
-        )
-        if result.returncode != 0:
-            st.error(f"Build failed: {result.stderr}")
+    TRAINING_FILE = "gitlab_final_training.txt"
+    source_file   = TRAINING_FILE if os.path.exists(TRAINING_FILE) else CHUNKS_FILE
+
+    # ── Build from chunks JSON (fallback) ─────────────────
+    if source_file == CHUNKS_FILE:
+        if not os.path.exists(CHUNKS_FILE):
+            st.error("No data files found!")
             st.stop()
-
-    # Fallback to chunks file
-    elif os.path.exists(CHUNKS_FILE):
-        st.info("⏳ Building vector database from chunks... 10-15 minutes. Do not close this tab.")
+            return
+        st.info("⏳ Building from chunks... 10-15 mins. Do not close tab.")
         with open(CHUNKS_FILE, "r", encoding="utf-8") as f:
             chunks = json.load(f)
         texts     = [c["text"] for c in chunks]
         metadatas = [{"chunk_id": c["chunk_id"], "source": c["source"]} for c in chunks]
-        embedding = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-        vectordb  = None
-        for i in range(0, len(texts), BATCH_SIZE):
-            bt = texts[i:i+BATCH_SIZE]
-            bm = metadatas[i:i+BATCH_SIZE]
-            if vectordb is None:
-                vectordb = Chroma.from_texts(
-                    texts=bt, embedding=embedding,
-                    metadatas=bm, persist_directory=CHROMA_DIR
-                )
-            else:
-                vectordb.add_texts(texts=bt, metadatas=bm)
-    else:
-        st.error("No data files found! Need gitlab_final_training.txt or gitlab_chunks_v4.json")
-        st.stop()
 
-    st.success("✅ Database built successfully! Reloading...")
+    # ── Build from training file (best quality) ────────────
+    else:
+        st.info("⏳ Building from training data... 15-20 mins. Do not close tab.")
+
+        BLOCKLIST = [
+            "salesforce", "workday", "glean", "golinks", "okta",
+            "netsuite", "expensify", "amer swag", "expense report",
+            "lead database", "deal desk", "quote to cash",
+        ]
+        ALLOWLIST = [
+            "gitlab", "handbook", "remote", "values", "credit",
+            "collaboration", "iteration", "transparency", "merge request",
+            "devsecops", "onboard", "parental", "performance", "product",
+            "direction", "roadmap", "vision", "engineering", "security",
+            "culture", "hiring", "benefit", "all-remote",
+        ]
+
+        def clean_text(text):
+            text = re.sub(r'<[^>]+>', ' ', text)
+            text = re.sub(r'<%.*?%>', ' ', text, flags=re.DOTALL)
+            text = re.sub(r'!\[.*?\]\(.*?\)', '', text)
+            text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
+            text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+            text = re.sub(r'```[\s\S]*?```', '', text)
+            text = re.sub(r'`[^`]+`', '', text)
+            text = re.sub(r'\*{1,3}([^\*]+)\*{1,3}', r'\1', text)
+            text = re.sub(r'^\|.*\|$', '', text, flags=re.MULTILINE)
+            text = re.sub(r'^[-*_]{3,}$', '', text, flags=re.MULTILINE)
+            text = re.sub(r'^\s*>\s*', '', text, flags=re.MULTILINE)
+            text = re.sub(r'https?://\S+', '', text)
+            text = re.sub(r'^\s*[-*+]\s+', '', text, flags=re.MULTILINE)
+            text = re.sub(r'[ \t]+', ' ', text)
+            text = re.sub(r'\n{3,}', '\n\n', text)
+            return text.strip()
+
+        def is_blocked(text):
+            lower = text.lower()
+            b = sum(1 for kw in BLOCKLIST if kw in lower)
+            a = sum(1 for kw in ALLOWLIST if kw in lower)
+            return b >= 3 and a < 2
+
+        def chunk_text(text, size=400, overlap=80, min_w=40):
+            paras  = [p.strip() for p in text.split('\n\n') if p.strip()]
+            chunks = []
+            for para in paras:
+                words = para.split()
+                if len(words) < min_w:
+                    continue
+                if len(words) <= size:
+                    chunks.append(para)
+                else:
+                    sents = re.split(r'(?<=[.!?])\s+', para)
+                    cur, cw = [], 0
+                    for s in sents:
+                        sw = len(s.split())
+                        if cw + sw > size and cur:
+                            chunks.append(' '.join(cur))
+                            cur = cur[-2:] if len(cur) >= 2 else []
+                            cw  = sum(len(x.split()) for x in cur)
+                        cur.append(s)
+                        cw += sw
+                    if cur and cw >= min_w:
+                        chunks.append(' '.join(cur))
+            return chunks
+
+        with open(TRAINING_FILE, "r", encoding="utf-8", errors="ignore") as f:
+            raw = f.read()
+
+        # Pre-tag direction sections
+        tagged, in_dir = [], False
+        for line in raw.splitlines():
+            if "=== SOURCE:" in line:
+                in_dir = True
+            tagged.append(("GITBOT_DIR " if in_dir else "") + line)
+        raw = "\n".join(tagged)
+
+        # Filter noise sections
+        sections = raw.split('\n\n')
+        kept     = [s for s in sections if not is_blocked(s)]
+        filtered = '\n\n'.join(kept)
+
+        # Clean and chunk
+        cleaned    = clean_text(filtered).replace("GITBOT_DIR", "")
+        raw_chunks = chunk_text(cleaned)
+
+        # Quality filter
+        texts, metadatas = [], []
+        for i, chunk in enumerate(raw_chunks):
+            words = chunk.split()
+            if len(words) < 40:
+                continue
+            alpha = sum(1 for w in words if any(c.isalpha() for c in w))
+            if alpha / len(words) < 0.65:
+                continue
+            source = "direction" if "direction" in chunk.lower() else "handbook"
+            texts.append(chunk)
+            metadatas.append({"chunk_id": i, "source": source})
+
+    # ── Embed and store ────────────────────────────────────
+    st.info(f"Embedding {len(texts)} chunks into ChromaDB...")
+    embedding = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    vectordb  = None
+
+    for i in range(0, len(texts), BATCH_SIZE):
+        bt = texts[i:i+BATCH_SIZE]
+        bm = metadatas[i:i+BATCH_SIZE]
+        if vectordb is None:
+            vectordb = Chroma.from_texts(
+                texts=bt, embedding=embedding,
+                metadatas=bm, persist_directory=CHROMA_DIR
+            )
+        else:
+            vectordb.add_texts(texts=bt, metadatas=bm)
+
+    st.success("✅ Database built! Reloading...")
     st.rerun()
 # def build_db_if_missing():
 #     """
