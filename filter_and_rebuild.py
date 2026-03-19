@@ -1,3 +1,7 @@
+import sys
+import subprocess
+subprocess.run([sys.executable, "-m", "pip", "install", "langchain-community", "langchain-huggingface"], capture_output=True)
+
 import json
 import re
 import os
