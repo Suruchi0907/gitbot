@@ -2,11 +2,11 @@ streamlit
 langchain
 langchain-core
 langchain-community
-langchain-chroma
+langchain-chroma==0.1.4
 langchain-huggingface
 langchain-google-genai
 google-generativeai
 sentence-transformers
-chromadb==0.5.3
+chromadb==0.4.24
 python-dotenv
 # force reinstall
