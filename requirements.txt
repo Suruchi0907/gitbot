@@ -7,6 +7,6 @@ langchain-huggingface
 langchain-google-genai
 google-generativeai
 sentence-transformers
-chromadb
+chromadb==0.5.3
 python-dotenv
 # force reinstall
