@@ -2,7 +2,7 @@ import json
 import re
 import os
 import shutil
-from langchain_chroma import Chroma
+from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 
 INPUT_FILE  = "gitlab_final_training.txt"
